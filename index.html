@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>IronTracker V11.9</title>
+
+    <link rel="icon" type="image/png" href="fuerza.png">
+    <link rel="apple-touch-icon" href="fuerza.png">
+    
+    <meta name="theme-color" content="#050505">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        :root { --bg: #050505; --card: #121212; --accent: #bef264; }
+        body { 
+            background-color: var(--bg); color: white; font-family: 'Inter', sans-serif; 
+            -webkit-tap-highlight-color: transparent; overflow-x: hidden;
+            padding-top: env(safe-area-inset-top);
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .exercise-card { background-color: var(--card); border: 1px solid #222; border-radius: 20px; }
+        
+        header { padding-top: calc(env(safe-area-inset-top) + 10px); }
+        .header-container { display: flex; flex-direction: column; gap: 12px; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .action-buttons { display: flex; gap: 6px; align-items: center; }
+
+        .active-day { border-bottom: 3px solid var(--accent); color: white !important; }
+        .collapse-content { display: none; }
+        .collapse-content.is-open { display: block; }
+        
+        .serie-dot {
+            width: 34px; height: 34px; border-radius: 10px;
+            background: #1a1a1a; border: 1px solid #333;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: bold; color: #555;
+        }
+        .serie-dot.active { background: var(--accent); color: black; border-color: var(--accent); }
+        
+        #rest-timer { transform: translateY(100%); transition: transform 0.4s ease; border-radius: 24px 24px 0 0; }
+        #rest-timer.show { transform: translateY(0); display: block !important; }
+        
+        .rpe-btn { padding: 4px; border-radius: 6px; font-size: 10px; font-weight: 800; border: 1px solid #333; color: #666; flex: 1; text-align: center; }
+        .rpe-btn.selected { background: #333; color: var(--accent); border-color: var(--accent); }
+        
+        #stats-panel { transform: translateX(100%); transition: transform 0.3s ease; background: black; z-index: 100; }
+        #stats-panel.open { transform: translateX(0); }
+        
+        .progression-badge { font-size: 9px; font-weight: 900; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; margin-top: 4px; display: inline-block; }
+        .badge-positive { background: #14532d; color: #bef264; }
+        .badge-negative { background: #450a0a; color: #f87171; }
+        .badge-stable { background: #1a1a1a; color: #71717a; border: 1px solid #333; }
+        
+        .header-btn { background: #1a1a1a; min-width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid #222; color: #666; flex-shrink: 0; }
+        .btn-finish { background: #dc2626; color: white; border: none; }
+        .btn-save { background: var(--accent); color: black; border: none; }
+    </style>
+</head>
+<body class="pb-32">
+
+    <div id="lightbox" class="fixed inset-0 hidden items-center justify-center p-4 bg-black/95 z-[100]" onclick="closeLightbox()">
+        <div id="lightbox-content" class="max-w-full max-h-[80vh]" onclick="event.stopPropagation()"></div>
+    </div>
+
+    <div id="stats-panel" class="fixed inset-0 p-4 overflow-y-auto no-scrollbar">
+        <div class="sticky top-0 bg-black z-20 pb-4 pt-2">
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex flex-col">
+                    <h2 class="text-lg font-black italic text-[#bef264] uppercase tracking-tighter">Historial</h2>
+                    <button onclick="resetHistoryOnly()" class="text-[8px] font-bold text-red-500 uppercase tracking-widest mt-1 text-left">
+                        <i class="fa-solid fa-sync mr-1"></i> Reiniciar Historial
+                    </button>
+                </div>
+                <button onclick="toggleStats()" class="text-2xl text-zinc-500">&times;</button>
+            </div>
+            <nav class="flex gap-4 overflow-x-auto no-scrollbar border-b border-zinc-900 pb-2">
+                <button onclick="filterStats('jueves', this)" class="stat-day-btn text-zinc-500 font-black text-[9px] uppercase tracking-widest shrink-0">Jueves</button>
+                <button onclick="filterStats('viernes', this)" class="stat-day-btn text-zinc-500 font-black text-[9px] active-day uppercase tracking-widest shrink-0">Viernes</button>
+                <button onclick="filterStats('sabado', this)" class="stat-day-btn text-zinc-500 font-black text-[9px] uppercase tracking-widest shrink-0">Sábado</button>
+                <button onclick="filterStats('domingo', this)" class="stat-day-btn text-zinc-500 font-black text-[9px] uppercase tracking-widest shrink-0">Domingo</button>
+            </nav>
+        </div>
+        <div id="stats-content" class="space-y-4 pt-2"></div>
+    </div>
+
+    <header class="p-4 sticky top-0 bg-[#050505]/95 backdrop-blur-md z-40 border-b border-zinc-900">
+        <div class="header-container">
+            <div class="top-bar">
+                <h1 class="text-lg font-black italic uppercase tracking-tighter text-[#bef264]">IronTracker</h1>
+                <div class="action-buttons no-scrollbar">
+                    <button onclick="toggleStats()" class="header-btn text-blue-400"><i class="fa-solid fa-chart-line"></i></button>
+                    <button onclick="exportData()" class="header-btn text-white"><i class="fa-solid fa-download"></i></button>
+                    <button onclick="importData()" class="header-btn text-white"><i class="fa-solid fa-upload"></i></button>
+                    <button onclick="finishWorkout()" class="header-btn btn-finish"><i class="fa-solid fa-flag-checkered"></i></button>
+                    <button onclick="saveAll(true)" class="header-btn btn-save"><i class="fa-solid fa-floppy-disk"></i></button>
+                </div>
+            </div>
+            <nav class="flex gap-6 overflow-x-auto no-scrollbar pt-1">
+                <button onclick="switchDay('jueves', this)" class="day-btn pb-1 text-zinc-500 font-black text-[10px] uppercase tracking-widest shrink-0">Jueves</button>
+                <button onclick="switchDay('viernes', this)" class="day-btn pb-1 text-zinc-500 font-black text-[10px] active-day uppercase tracking-widest shrink-0">Viernes</button>
+                <button onclick="switchDay('sabado', this)" class="day-btn pb-1 text-zinc-500 font-black text-[10px] uppercase tracking-widest shrink-0">Sábado</button>
+                <button onclick="switchDay('domingo', this)" class="day-btn pb-1 text-zinc-500 font-black text-[10px] uppercase tracking-widest shrink-0">Domingo</button>
+            </nav>
+        </div>
+    </header>
+
+    <main id="app-container" class="p-4 space-y-5"></main>
+
+    <div id="rest-timer" class="fixed bottom-0 left-0 right-0 bg-[#bef264] text-black p-5 z-50 shadow-2xl hidden">
+        <div class="flex justify-between items-center mb-3">
+            <div>
+                <p class="text-[9px] font-black uppercase opacity-60">Descanso</p>
+                <div class="flex items-center gap-3">
+                    <button onclick="adjustTime(-10)" class="bg-black/5 w-7 h-7 rounded-full font-bold">-</button>
+                    <p id="timer-num" class="font-black text-3xl tracking-tighter">01:00</p>
+                    <button onclick="adjustTime(10)" class="bg-black/5 w-7 h-7 rounded-full font-bold">+</button>
+                </div>
+            </div>
+            <button onclick="stopTimer()" class="bg-black text-[#bef264] px-5 py-2 rounded-xl text-[10px] font-black uppercase">Omitir</button>
+        </div>
+        <div class="w-full h-1 bg-black/10 rounded-full overflow-hidden">
+            <div id="timer-progress" class="h-full bg-black w-full transition-all duration-1000 linear"></div>
+        </div>
+    </div>
+
+    <script>
+        const dbName = "IronTrackerDB_Standalone_V11";
+        let db, gymData = {}, currentDay = 'viernes'; 
+        let openSections = JSON.parse(localStorage.getItem('open_sections')) || {};
+        let timerInterval, remainingTime, totalDuration = 60;
+
+        const request = indexedDB.open(dbName, 1);
+        request.onupgradeneeded = (e) => { e.target.result.createObjectStore("workoutData"); };
+        request.onsuccess = (e) => { db = e.target.result; loadFromDB(); };
+
+        function loadFromDB() {
+            const store = db.transaction(["workoutData"], "readonly").objectStore("workoutData");
+            const getReq = store.get("currentWorkout");
+            getReq.onsuccess = () => {
+                gymData = getReq.result || { jueves: [], viernes: [], sabado: [], domingo: [] };
+                render();
+            };
+        }
+
+        function saveAll(manual = false) {
+            const store = db.transaction(["workoutData"], "readwrite").objectStore("workoutData");
+            store.put(gymData, "currentWorkout");
+            if(manual) alert("✅ Guardado");
+        }
+
+        function finishWorkout() {
+            if(!confirm("¿Finalizar sesión?")) return;
+            const dateKey = new Date().toISOString().split('T')[0];
+            gymData[currentDay].forEach(sec => {
+                sec.exercises.forEach(ex => {
+                    if(ex.weight && parseFloat(ex.weight) > 0) {
+                        const history = ex.weeklyHistory || {};
+                        const dates = Object.keys(history).sort();
+                        
+                        // LÓGICA AGREGADA: Guardar el diferencial antes de resetear
+                        if(dates.length > 0) {
+                            const lastW = parseFloat(history[dates[dates.length-1]]);
+                            ex.lastDiff = (parseFloat(ex.weight) - lastW).toFixed(1);
+                        } else {
+                            ex.lastDiff = "0.0";
+                        }
+
+                        if(!ex.weeklyHistory) ex.weeklyHistory = {};
+                        ex.weeklyHistory[dateKey] = ex.weight;
+                    }
+                    ex.series = 0; 
+                });
+            });
+            saveAll(); render();
+        }
+
+        function resetHistoryOnly() {
+            if(!confirm("¿Borrar registros previos?")) return;
+            Object.keys(gymData).forEach(day => {
+                gymData[day].forEach(sec => {
+                    sec.exercises.forEach(ex => {
+                        ex.weeklyHistory = {}; 
+                        delete ex.lastDiff; // Borra también el diferencial guardado
+                    });
+                });
+            });
+            saveAll(true);
+            render();
+            toggleStats();
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify(gymData);
+            const blob = new Blob([dataStr], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `irontracker_backup_${new Date().toLocaleDateString()}.json`;
+            a.click();
+        }
+
+        function importData() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = event => {
+                    gymData = JSON.parse(event.target.result);
+                    saveAll(true); render();
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+
+        function render() {
+            const container = document.getElementById('app-container'); container.innerHTML = '';
+            const dayData = gymData[currentDay] || [];
+            dayData.forEach((section, sIdx) => {
+                const isOpen = openSections[`${currentDay}-${section.muscle}`];
+                let sectionHTML = `<div class="border-b border-zinc-800 pb-2">
+                    <div class="w-full flex justify-between items-center py-2" onclick="toggleSection('${section.muscle}')">
+                        <span class="uppercase tracking-widest text-[#bef264] font-black text-[10px]">${section.muscle}</span>
+                        <i class="fa-solid ${isOpen ? 'fa-chevron-up' : 'fa-chevron-down'} opacity-40 text-[8px]"></i>
+                    </div>
+                    <div class="collapse-content ${isOpen ? 'is-open' : ''} space-y-4 pt-3">`;
+                
+                section.exercises.forEach((ex, eIdx) => {
+                    // LÓGICA DE INSIGNIA CORREGIDA PARA SER PERSISTENTE
+                    let badgeHTML = '';
+                    const savedDiff = ex.lastDiff !== undefined ? parseFloat(ex.lastDiff) : null;
+
+                    if(savedDiff !== null) {
+                        const style = savedDiff > 0 ? 'badge-positive' : (savedDiff < 0 ? 'badge-negative' : 'badge-stable');
+                        const text = savedDiff === 0 ? 'estable' : (savedDiff > 0 ? '+' : '') + savedDiff + 'kg';
+                        badgeHTML = `<span class="progression-badge ${style}">${text}</span>`;
+                    } else {
+                        badgeHTML = `<span class="progression-badge badge-stable">estable</span>`;
+                    }
+
+                    sectionHTML += `
+                        <div class="exercise-card p-4 flex flex-col gap-4 ${ex.series >= 4 ? 'opacity-60' : ''}">
+                            <div class="flex items-center gap-3">
+                                <div class="w-16 h-16 bg-zinc-900 rounded-xl overflow-hidden shrink-0" onclick="openLightbox('${ex.media}')">
+                                    ${ex.media ? (ex.media.includes('video') ? `<video src="${ex.media}" class="w-full h-full object-cover" muted playsinline></video>` : `<img src="${ex.media}" class="w-full h-full object-cover">`) : '<div class="w-full h-full flex items-center justify-center text-zinc-800"><i class="fa-solid fa-play text-xs"></i></div>'}
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <input type="text" value="${ex.name}" onchange="gymData['${currentDay}'][${sIdx}].exercises[${eIdx}].name=this.value;saveAll()" class="bg-transparent font-black text-[12px] w-full outline-none uppercase text-white truncate">
+                                    ${badgeHTML}
+                                    <div class="flex justify-between bg-zinc-900/50 p-1 rounded-lg gap-1 mt-2">
+                                        ${[7, 8, 9, 10].map(v => `<button onclick="setRPE(${sIdx}, ${eIdx}, ${v})" class="rpe-btn ${ex.rpe === v ? 'selected' : ''}">${v}</button>`).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <div class="flex-1 bg-zinc-800/30 rounded-lg px-3 py-2 text-[9px] font-black uppercase"><span class="text-zinc-600">KG</span> <input type="text" inputmode="decimal" value="${ex.weight}" onchange="gymData['${currentDay}'][${sIdx}].exercises[${eIdx}].weight=this.value;saveAll();" class="bg-transparent w-full outline-none text-white text-xs"></div>
+                                <div class="flex-1 bg-zinc-800/30 rounded-lg px-3 py-2 text-[9px] font-black uppercase"><span class="text-zinc-600">Reps</span> <input type="text" inputmode="numeric" value="${ex.reps}" onchange="gymData['${currentDay}'][${sIdx}].exercises[${eIdx}].reps=this.value;saveAll()" class="bg-transparent w-full outline-none text-white text-xs"></div>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <div class="flex gap-1.5">${[1, 2, 3, 4, 5].map(n => `<button onclick="setSeries(${sIdx}, ${eIdx}, ${n})" class="serie-dot ${ex.series >= n ? 'active' : ''}">${n}</button>`).join('')}</div>
+                                <div class="flex gap-3 text-zinc-600">
+                                    <label class="cursor-pointer"><i class="fa-solid fa-camera text-sm"></i><input type="file" accept="video/*,image/*" class="hidden" onchange="handleFile(this, ${sIdx}, ${eIdx})"></label>
+                                    <button onclick="removeEx(${sIdx}, ${eIdx})"><i class="fa-solid fa-trash text-sm"></i></button>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+                sectionHTML += `<button onclick="addEx(${sIdx})" class="w-full py-3 border-2 border-dashed border-zinc-800 rounded-xl text-zinc-700 text-[9px] font-black">+ AÑADIR</button></div></div>`;
+                container.innerHTML += sectionHTML;
+            });
+        }
+
+        function filterStats(day, btn) {
+            document.querySelectorAll('.stat-day-btn').forEach(b => b.classList.remove('active-day'));
+            if(btn) btn.classList.add('active-day');
+            let html = "";
+            const sections = gymData[day] || [];
+            sections.forEach(sec => {
+                sec.exercises.forEach(ex => {
+                    const history = ex.weeklyHistory || {}, dates = Object.keys(history).sort();
+                    if(dates.length > 0) {
+                        const cid = `chart-${day}-${ex.name.replace(/\s+/g, '')}`;
+                        const vals = dates.map(d => parseFloat(history[d]));
+                        const last = vals[vals.length - 1];
+                        const prev = vals.length > 1 ? vals[vals.length - 2] : last;
+                        const diff = (last - prev).toFixed(1);
+
+                        html += `<div class="bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-[#bef264] font-black uppercase text-[10px] truncate pr-2">${ex.name}</h3>
+                                <span class="text-[9px] font-black ${diff >= 0 ? 'text-[#bef264]' : 'text-red-500'} shrink-0">${diff >= 0 ? '+' : ''}${diff}kg</span>
+                            </div>
+                            <div class="h-[100px] w-full"><canvas id="${cid}"></canvas></div>
+                        </div>`;
+                        setTimeout(() => {
+                            new Chart(document.getElementById(cid).getContext('2d'), {
+                                type: 'line', data: {
+                                    labels: dates.map(d => d.split('-').slice(1).reverse().join('/')),
+                                    datasets: [{ data: vals, borderColor: '#bef264', tension: 0.4, fill: false, pointRadius: 2 }]
+                                },
+                                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { display: false } } }
+                            });
+                        }, 50);
+                    }
+                });
+            });
+            document.getElementById('stats-content').innerHTML = html || "<p class='text-center opacity-30 py-10 text-[10px] uppercase font-black'>Sin registros</p>";
+        }
+
+        function toggleSection(m) { const key = `${currentDay}-${m}`; openSections[key] = !openSections[key]; localStorage.setItem('open_sections', JSON.stringify(openSections)); render(); }
+        function switchDay(day, btn) { currentDay = day; document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active-day')); btn.classList.add('active-day'); render(); }
+        function setSeries(s, e, n) { gymData[currentDay][s].exercises[e].series = n; saveAll(); render(); startTimer(); }
+        function addEx(s) { gymData[currentDay][s].exercises.push({name: "NUEVO", weight: "", reps: "", series: 0, media: "", rpe: 0, weeklyHistory: {}}); saveAll(); render(); }
+        function removeEx(s, e) { if(confirm("¿Eliminar?")) { gymData[currentDay][s].exercises.splice(e, 1); saveAll(); render(); } }
+        function setRPE(s, e, v) { gymData[currentDay][s].exercises[e].rpe = v; saveAll(); render(); }
+        function toggleStats() { const p = document.getElementById('stats-panel'); if(p.classList.toggle('open')) filterStats(currentDay, null); }
+        function handleFile(i, s, e) { const r = new FileReader(); r.onload = (ev) => { gymData[currentDay][s].exercises[e].media = ev.target.result; saveAll(); render(); }; r.readAsDataURL(i.files[0]); }
+        function startTimer() { stopTimer(); remainingTime = totalDuration; document.getElementById('rest-timer').classList.add('show'); updateTimerUI(); timerInterval = setInterval(() => { remainingTime--; updateTimerUI(); if (remainingTime <= 0) stopTimer(); }, 1000); }
+        function stopTimer() { clearInterval(timerInterval); document.getElementById('rest-timer').classList.remove('show'); }
+        function adjustTime(s) { remainingTime = Math.max(0, remainingTime + s); updateTimerUI(); }
+        function updateTimerUI() { const m = Math.floor(remainingTime / 60), s = remainingTime % 60; document.getElementById('timer-num').innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`; document.getElementById('timer-progress').style.width = `${(remainingTime / totalDuration) * 100}%`; }
+        function openLightbox(m) { if(!m) return; const lb = document.getElementById('lightbox'); lb.classList.replace('hidden', 'flex'); document.getElementById('lightbox-content').innerHTML = m.includes('video') ? `<video src="${m}" controls autoplay playsinline class="rounded-xl max-h-[75vh]"></video>` : `<img src="${m}" class="rounded-xl max-h-[75vh]">`; }
+        function closeLightbox() { document.getElementById('lightbox').classList.replace('flex','hidden'); }
+    </script>
+</body>
+</html>
